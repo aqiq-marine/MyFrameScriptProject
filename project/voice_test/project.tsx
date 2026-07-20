@@ -1,263 +1,200 @@
 import { useAnimation, useVariable } from "../../src/lib/animation"
 import { DrawText } from "../../src/lib/animation/effect/draw-text"
 import { BEZIER_SMOOTH } from "../../src/lib/animation/functions"
-import { Clip, ClipStatic } from "../../src/lib/clip"
+import { Clip, ClipSequence, ClipStatic, useClipRange } from "../../src/lib/clip"
 import { seconds, useCurrentFrame } from "../../src/lib/frame"
 import { FillFrame } from "../../src/lib/layout/fill-frame"
 import { Project } from "../../src/lib/project"
 import { TimeLine } from "../../src/lib/timeline"
 import { createBlink, createLipSync, generateBlinkData, Motion, MotionWithVars, PsdCharacter, Voice } from "../../src/lib/character/character-unit"
-import type { CSSProperties } from "react"
+import { useEffect, useState, type CSSProperties } from "react"
 import { framesToSeconds } from "../../src/lib/audio"
 import { assets } from "../../assets/voice_test/assets"
+import { type AssetBundle, type AssetFile, type LipSyncEntry} from "../../assets/voice_test/asset_types"
+
+import { aoiDict } from "../../assets/utils/nokuna/kotonoha_aoi_v1"
+import { Jimaku } from "../utils/jimaku"
+import { Sound } from "../../src/lib/sound/sound"
+import { Bgm } from "../utils/bgm"
 
 
-const buildJsonUrl = (path: string) => {  
-  const url = new URL("http://localhost:3000/file")  
-  url.searchParams.set("path", path)  
-  return url.toString()  
-}
+const Blink = createBlink(aoiDict.eyeOptions)
+const blink = generateBlinkData(0, 6000)
+const LipSync = createLipSync(aoiDict.mouthOptions)
 
-const loadJsonFile = async <T = any>(path: string): Promise<T> => {  
-  const url = buildJsonUrl(path)  
-    
-  try {  
-    const response = await fetch(url)  
-    if (!response.ok) {  
-      throw new Error(`Failed to load JSON: ${response.status}`)  
-    }  
-      
-    const text = await response.text()  
-    return JSON.parse(text) as T  
-  } catch (error) {  
-    console.error(`Error loading JSON file ${path}:`, error)  
-    throw error  
-  }  
-}
-
-interface AssetData {
-  files: {
-    audio_path: string,
-    lipsync_path: string,
-    lipsync_data: any,
-    script_path: string,
-    script_text: string,
-    starts: number[]
-  }[]
-}
-
-
-
-const aoiDict = {
-    eyeOptions: {
-        kind: "bool" as const,
-        options: {
-            Default: "あおい全身/顔パーツ/目/標準",
-            Open: "あおい全身/顔パーツ/目/標準",
-            HalfOpen: "あおい全身/顔パーツ/目/細目",
-            HalfClosed: "あおい全身/顔パーツ/目/細目もっと",
-            Closed: "あおい全身/顔パーツ/目/つむる",
-        }
-
-    },
-    mouthOptions: {
-        kind: "bool" as const,
-        options: {
-            Default: "あおい全身/顔パーツ/口/あ", 
-            A: "あおい全身/顔パーツ/口/あ", 
-            I: "あおい全身/顔パーツ/口/い", 
-            U: "あおい全身/顔パーツ/口/う", 
-            E: "あおい全身/顔パーツ/口/え", 
-            O: "あおい全身/顔パーツ/口/お", 
-            X: "あおい全身/顔パーツ/口/にま", 
-        }
-    }
-}
-
-type TextProps = {
-  text: string
-  size?: number
-  weight?: number
-  color?: string
-  outlineColor?: string
-  outlineWidth?: number
-  shadow?: string
-  letterSpacing?: number | string
-  lineHeight?: number | string
-  fontFamily?: string
-  style?: CSSProperties
-}
-
-export const Text = ({
-  text,
-  size = 52,
-  weight = 700,
-  color = "#050505",
-  outlineColor = "#ffffff",
-  // outlineColor = "#FFDE42",
-  outlineWidth = 7,
-  shadow = "0 0 16px rgba(17, 31, 162, 0.0)",
-  letterSpacing = "0.04em",
-  lineHeight = 1,
-  fontFamily,
-  style,
-}: TextProps) => {
-  const baseStyle: CSSProperties = {
-    position: "relative",
-    display: "inline-block",
-    fontSize: size,
-    fontWeight: weight,
-    letterSpacing,
-    lineHeight,
-    fontFamily,
-  }
+const Aoi = ({data, className, motion}: {data: AssetFile, className?: string, motion?: any}) => {
+  const utilPrefix = "assets/utils"
+  const projPrefix = "assets/voice_test"
+  const psd = utilPrefix + "/nokuna/kotonoha_aoi_v1.psd"
 
   return (
-    <span style={style ? { ...baseStyle, ...style } : baseStyle}>
-      <span
-        style={{
-          position: "absolute",
-          inset: 0,
-          WebkitTextStroke: `${outlineWidth}px ${outlineColor}`,
-          WebkitTextFillColor: "transparent",
-          color: "transparent",
-          textShadow: shadow,
-          whiteSpace: "nowrap",
-        }}
-      >
-        {text}
-      </span>
-      <span style={{ position: "relative", color, whiteSpace: "nowrap" }}>{text}</span>
-    </span>
+    <Clip>
+      <PsdCharacter psd={psd} className={className ?? "aoi"}>
+        <Voice voice={projPrefix + "/" + data.audio_path} volume={1}/>
+        <Blink data={blink} />
+        <LipSync data={data.lipsync_data} />
+        {motion}
+      </PsdCharacter>
+      <Jimaku text={data.script_text} starts={data.starts}/>
+    </Clip>
   )
 }
 
+const AoiClipToOther = ({
+  data,
+  className,
+}: {
+  data: AssetFile
+  className?: string
+}) => {
+  const clipRange = useClipRange()
 
+  const duration = clipRange ? clipRange.end - clipRange.start : 0
+  const key = clipRange
+    ? `${clipRange.start}-${clipRange.end}`
+    : "no-range"
 
-const StaticJimaku = ({text}: { text: string }) => {
   return (
-    <div
-      style={{
-        position: "absolute",
-        left: 0,
-        right: 0,
-        bottom: 50,
-        textAlign: "center",
-      }}
-    >
-      <Text text={text} color="#5478FF" />
-    </div>
-  )
-}
-
-const Jimaku = ({ text, starts }: { text: string, starts: number[] }) => {
-  const f = useCurrentFrame();
-  const t = framesToSeconds(f);
-
-  if (f == 0) {
-    return null
-  }
-
-  const threshold = 28;
-
-  const split_text: string[] = [];
-  const split_starts: number[] = [];
-
-  // 1. 読点で分割
-  const chunks = text.split('、');
-
-  let cur_chunk = '';
-  let cur_start_index = 0;
-
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    // threshold以下なら連結
-    if ((cur_chunk + chunk).length <= threshold) {
-      if (cur_chunk === '') {
-        cur_start_index = i; // このまとまりの最初のチャンクのindex
-        cur_chunk = chunk;
-      } else {
-        cur_chunk += '、' + chunk;
+    <Aoi
+      key={key}
+      data={data}
+      className={className}
+      motion={
+        <MotionWithVars
+          variables={{ t: 0 as number }}
+          animation={async (ctx, vars) => {
+            await ctx.move(vars.t).to(1, duration + 1)
+          }}
+          motion={(_v, _f) => ({})}
+        />
       }
-    } else {
-      // まとまりを保存
-      split_text.push(cur_chunk);
-      split_starts.push(starts[cur_start_index]);
-      // 新しいまとまりに切り替え
-      cur_chunk = chunk;
-      cur_start_index = i;
-    }
-  }
-
-  // 残りのチャンクがあれば追加
-  if (cur_chunk !== '') {
-    split_text.push(cur_chunk);
-    split_starts.push(starts[cur_start_index]);
-  }
-
-  // 現在のフレームから表示するテキストを取得
-
-  let cur_text_index = 0;
-  for (let i = 0; i < split_starts.length; i++) {
-    if (split_starts[i] <= t) {
-      cur_text_index = i;
-    }
-  }
-
-  const current_text = split_text[cur_text_index];
-  return <StaticJimaku text={current_text} />;
-};
+    />
+  )
+}
 
 
-// const Blink = createBlink(aoiDict.eyeOptions)
-// const blink = generateBlinkData(0, 6000)
-// const LipSync = createLipSync(aoiDict.mouthOptions)
+const HelloScene = () => {
+  const progress = useVariable(0)
+  const color = useVariable("#FFFFFF")
 
-// const Aoi = ({index, className, motion}: {index: number, className?: string, motion?: any}) => {
-//   const [aoiAssets, setAoiAssets] = useState<AssetData | null>(null)
-//   
-//   useEffect(() => {
-//     if (aoiAssets) return
-//   
-//     const load = async () => {
-//       const data = await loadJsonFile<AssetData>("assets/dft/bundle_with_starts.json")
-//       setAoiAssets(data)
-//     }
-//   
-//     load()
-//   }, [])
-//   
-//   if (!aoiAssets) {
-//     return null
-//   }
-//   const urlPrefix = "assets"
-//   const psd = urlPrefix + "/琴葉葵立ち絵全身配布用.psd"
-//   const files = aoiAssets.files[index]
-//   const lipsync = files.lipsync_data
-//   const text = files.script_text
-// 
-// 
-//   return (
-//       <Clip>
-//         <PsdCharacter psd={psd} renderOptions={{flipx: true}} className={className ?? "aoi"}>
-//             <Voice voice={urlPrefix + "/dft/" + files.audio} volume={1}/>
-//             <Blink data={blink} />
-//             <LipSync data={lipsync} />
-//             {motion}
-//         </PsdCharacter>
-//         <Jimaku text={text} starts={files.starts}/>
-//       </Clip>
-//     )
-// }
+  useAnimation(async (context) => {
+    await context.parallel([
+      context.move(progress).to(1, seconds(3), BEZIER_SMOOTH),
+      context.move(color).to("#75a9bd", seconds(3), BEZIER_SMOOTH),
+    ])
+    await context.sleep(seconds(1))
+    await context.move(progress).to(0, seconds(3), BEZIER_SMOOTH)
+  }, [])
+
+  return (
+    <FillFrame style={{ alignItems: "center", justifyContent: "center" }}>
+      <DrawText
+        text="Hello, world!"
+        fontUrl="assets/utils/NotoSerifCJKJP-Medium.ttf"
+        strokeWidth={2}
+        progress={progress}
+        strokeColor={color.use()}
+        fillColor={color.use()}
+      />
+    </FillFrame>
+  )
+}
+
+
+const IntroScene = () => {
+  const files = assets.children.introduction.files;
+  return (
+    <ClipSequence>
+      <Clip>
+        <AoiClipToOther data={files[0]} />
+        <HelloScene />
+      </Clip>
+      <Clip>
+        <Aoi data={files[1]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[2]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[3]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[4]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[5]} />
+      </Clip>
+    </ClipSequence>
+  )
+}
+const BodyScene = () => {
+  const files = assets.children.body.files;
+  return (
+    <ClipSequence>
+      <Clip>
+        <Aoi data={files[0]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[1]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[2]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[3]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[4]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[5]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[6]} />
+      </Clip>
+    </ClipSequence>
+  )
+}
+
+const ConclusionScene = () => {
+  const files = assets.children.conclusion.files;
+  return (
+    <ClipSequence>
+      <Clip>
+        <Aoi data={files[0]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[1]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[2]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[3]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[4]} />
+      </Clip>
+      <Clip>
+        <Aoi data={files[5]} />
+      </Clip>
+    </ClipSequence>
+  )
+}
 
 
 export const MYPROJECT = () => {
   return (
     <Project>
       <TimeLine>
-        <ClipStatic start={0} end={seconds(1)} label="Hello">
-          <Jimaku text="hogehoge" starts={[]} />
-        </ClipStatic>
+        <Clip>
+          <ClipSequence>
+            <IntroScene />
+            <BodyScene />
+            <ConclusionScene />
+          </ClipSequence>
+          <Bgm sound="assets/utils/bgm/Let_me_think_!.mp3" volume={0.05} fadeInFrames={seconds(3)} fadeOutFrames={seconds(1)} label="bgm"/>
+        </Clip>
       </TimeLine>
     </Project>
   )

@@ -45,6 +45,33 @@ def parse_lab(path: Path):
 
     return lipsync
 
+VOWEL_MAP = {
+    "a": "A",
+    "i": "B",
+    "u": "C",
+    "e": "D",
+    "o": "E",
+}
+
+def lab_to_rhubarb(data):
+    cues = []
+
+    for i, p in enumerate(data):
+        value = VOWEL_MAP.get(p["symbol"])
+
+        if value is None:
+            for nxt in data[i + 1:]:
+                value = VOWEL_MAP.get(nxt["symbol"])
+                if value:
+                    break
+
+        cues.append({
+            "start": p["start"] / 10_000_000,
+            "end": p["end"] / 10_000_000,
+            "value": value or "X",
+        })
+
+    return {"mouthCues": cues}
 
 # ==========================
 # スクリプト解析
@@ -180,10 +207,10 @@ for wav in ROOT.rglob("*.wav"):
     entry = {
         "audio_path": str(wav.relative_to(ROOT)).replace("\\", "/"),
         "lipsync_path": str(lab.relative_to(ROOT)).replace("\\", "/"),
-        "lipsync_data": lipsync,
+        "lipsync_data": lab_to_rhubarb(lipsync),
         "script_path": str(txt.relative_to(ROOT)).replace("\\", "/"),
         "script_text": script_text,
-        "starts": starts
+        "starts": list(map(lambda s: s / 10_000_000, starts))
     }
 
     node = bundle
@@ -212,7 +239,7 @@ sort_bundle(bundle)
 # ==========================
 
 with OUTPUT.open("w", encoding="utf-8", newline="\n") as f:
-    f.write("const assets = ")
+    f.write("export const assets = ")
 
     json.dump(
         bundle,
@@ -221,7 +248,7 @@ with OUTPUT.open("w", encoding="utf-8", newline="\n") as f:
         indent=2,
     )
 
-    f.write(" as const;\n\n")
+    f.write(";\n\n")
     f.write("export type AssetData = typeof assets;\n\n")
     f.write("export default assets;\n")
 
