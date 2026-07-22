@@ -16,6 +16,8 @@ import { aoiDict } from "../../assets/utils/nokuna/kotonoha_aoi_v1"
 import { Jimaku } from "../utils/jimaku"
 import { Sound } from "../../src/lib/sound/sound"
 import { Bgm } from "../utils/bgm"
+import { PsdMotionCharacter } from "../../src/lib/character/psd-motion-character"
+import { PsdMotion } from "../../src/lib/character/psd-motion-component"
 
 
 const Blink = createBlink(aoiDict.eyeOptions)
@@ -187,13 +189,26 @@ export const MYPROJECT = () => {
   return (
     <Project>
       <TimeLine>
-        <Clip>
-          <ClipSequence>
-            <IntroScene />
-            <BodyScene />
-            <ConclusionScene />
-          </ClipSequence>
-          <Bgm sound="assets/utils/bgm/Let_me_think_!.mp3" volume={0.05} fadeInFrames={seconds(3)} fadeOutFrames={seconds(1)} label="bgm"/>
+        <PsdMotionCharacter
+          id="aoi"
+          psd="assets/utils/nokuna/kotonoha_aoi_v1.psd"
+        />
+        <Clip start={0} duration={60}>
+          <PsdMotion
+            characterId="aoi"
+            id="intro"
+            motion={({ frame, progress }) => ({
+              options: {
+                "face.mouth": progress,
+              },
+              transform: {
+                x: frame * 2,
+                scaleX: 1 + progress * 0.1,
+                scaleY: 1 + progress * 0.1,
+                opacity: progress,
+              },
+            })}
+          />
         </Clip>
       </TimeLine>
     </Project>
