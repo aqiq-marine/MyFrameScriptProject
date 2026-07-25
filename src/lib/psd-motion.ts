@@ -1,4 +1,14 @@
 import { useSyncExternalStore } from "react"
+import type { Variable } from "./animation"
+
+export type VariableMap = {
+  [key: string]: Variable<unknown>
+}
+
+export type VariableValues<T extends VariableMap> = {
+  [K in keyof T]:
+    T[K] extends Variable<infer U> ? U : never
+}
 
 export type PsdMotionOptions = Record<string, unknown>
 
@@ -13,17 +23,25 @@ export type PsdCanvasTransform = {
   anchorY?: number
 }
 
-export type PsdMotionContext = {
-  frame: number
+export type PsdMotionContext<TVariables = unknown> = {
   globalFrame: number
-  progress: number
   durationFrames: number
-  variables: Record<string, unknown>
+  variables: TVariables
 }
 
 export type PsdMotionResult = {
   options?: PsdMotionOptions
   transform?: PsdCanvasTransform
+}
+
+export type PsdMotion<
+  TVariables extends VariableMap = VariableMap,
+> = {
+  variables?: TVariables
+
+  evaluate(
+    context: PsdMotionContext<VariableValues<TVariables>>,
+  ): PsdMotionResult
 }
 
 export type PsdMotionSegment = {
@@ -33,11 +51,13 @@ export type PsdMotionSegment = {
   durationFrames: number
   clipId?: string
   priority?: number
-  variables?: Record<string, unknown>
-  evaluate: (context: PsdMotionContext) => PsdMotionResult
+
+  motion: PsdMotion
 }
 
+
 let segments: PsdMotionSegment[] = []
+
 const listeners = new Set<() => void>()
 
 const subscribe = (listener: () => void) => {
@@ -47,16 +67,25 @@ const subscribe = (listener: () => void) => {
 
 const notify = () => listeners.forEach((listener) => listener())
 
-export const registerPsdMotionGlobal = (segment: PsdMotionSegment) => {
-  const previous = segments.find((item) => item.id === segment.id)
+export const registerPsdMotionGlobal = (
+  segment: PsdMotionSegment,
+) => {
+  const previous = segments.find((s) => s.id === segment.id)
   if (previous === segment) return
-  segments = [...segments.filter((item) => item.id !== segment.id), segment]
+
+  segments = [
+    ...segments.filter((s) => s.id !== segment.id),
+    segment,
+  ]
+
   notify()
 }
 
 export const unregisterPsdMotionGlobal = (id: string) => {
-  const next = segments.filter((segment) => segment.id !== id)
+  const next = segments.filter((s) => s.id !== id)
+
   if (next.length === segments.length) return
+
   segments = next
   notify()
 }
@@ -64,9 +93,25 @@ export const unregisterPsdMotionGlobal = (id: string) => {
 export const usePsdMotionSegments = () =>
   useSyncExternalStore(subscribe, () => segments, () => segments)
 
+
+const resolveVariables = (
+  variables: VariableMap | undefined,
+  frame: number,
+): Record<string, unknown> => {
+  if (!variables) return {}
+
+  return Object.fromEntries(
+    Object.entries(variables).map(([key, variable]) => [
+      key,
+      variable.get(frame),
+    ]),
+  )
+}
+
 export const resolvePsdMotionSegments = (
-  list: PsdMotionSegment[],
+  list: readonly PsdMotionSegment[],
   characterId: string,
+  currentFrame: number,
   globalFrame: number,
 ) => {
   return list
@@ -74,22 +119,28 @@ export const resolvePsdMotionSegments = (
       (segment) =>
         segment.characterId === characterId &&
         globalFrame >= segment.projectStartFrame &&
-        globalFrame < segment.projectStartFrame + segment.durationFrames,
+        globalFrame <
+          segment.projectStartFrame + segment.durationFrames,
     )
     .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
     .map((segment) => {
-      const frame = globalFrame - segment.projectStartFrame
-      const durationFrames = Math.max(0, segment.durationFrames)
-      const progress = durationFrames <= 1 ? 1 : frame / (durationFrames - 1)
-      return segment.evaluate({
-        frame,
+
+      const durationFrames = Math.max(
+        0,
+        segment.durationFrames,
+      )
+
+      return segment.motion.evaluate({
         globalFrame,
-        progress,
         durationFrames,
-        variables: segment.variables ?? {},
+        variables: resolveVariables(
+          segment.motion.variables,
+          currentFrame
+        ),
       })
     })
 }
+
 
 export const mergePsdMotionOptions = (results: PsdMotionResult[]) =>
   Object.assign({}, ...results.map((result) => result.options ?? {}))

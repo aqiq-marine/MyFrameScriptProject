@@ -189,26 +189,33 @@ export const MYPROJECT = () => {
   return (
     <Project>
       <TimeLine>
-        <PsdMotionCharacter
-          id="aoi"
-          psd="assets/utils/nokuna/kotonoha_aoi_v1.psd"
-        />
-        <Clip start={0} duration={60}>
-          <PsdMotion
-            characterId="aoi"
-            id="intro"
-            motion={({ frame, progress }) => ({
-              options: {
-                "face.mouth": progress,
-              },
-              transform: {
-                x: frame * 2,
-                scaleX: 1 + progress * 0.1,
-                scaleY: 1 + progress * 0.1,
-                opacity: progress,
-              },
-            })}
+        <Clip>
+          <PsdMotionCharacter
+            id="aoi"
+            psd="assets/utils/nokuna/kotonoha_aoi_v1.psd"
           />
+          <Clip start={0} duration={60}>
+            <PsdMotion
+              characterId="aoi"
+              id="intro"
+              variables={{
+                t: useVariable(0)
+              }}
+              animation={async (ctx, variables) => {
+                await ctx.move(variables.t).to(1, seconds(1));
+              }}
+              motion={({ variables }) => ({
+                options: {
+                },
+                transform: {
+                  x: variables.t * 2,
+                  scaleX: 1 + variables.t * 0.1,
+                  scaleY: 1 + variables.t * 0.1,
+                  opacity: variables.t,
+                },
+              })}
+            />
+          </Clip>
         </Clip>
       </TimeLine>
     </Project>

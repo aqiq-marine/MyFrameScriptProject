@@ -1,7 +1,8 @@
 import { readPsd, type Psd } from "ag-psd"
+import { getSchema } from "ag-psd-psdtool"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useClipActive } from "../clip"
-import { useGlobalCurrentFrame } from "../frame"
+import { useCurrentFrame, useGlobalCurrentFrame } from "../frame"
 import {
   mergePsdCanvasTransforms,
   mergePsdMotionOptions,
@@ -11,6 +12,7 @@ import {
 
 type PsdLayer = {
   name?: string
+  visible?: boolean
   left?: number
   top?: number
   canvas?: HTMLCanvasElement
@@ -69,26 +71,89 @@ const layerCanvas = (layer: PsdLayer) => {
   return null
 }
 
-const flattenLeaves = (root: PsdLayer) => {
-  const result: PsdLayer[] = []
-  const visit = (layer: PsdLayer) => {
+type LayerInfo = {
+  layer: PsdLayer
+  path: string
+  name: string
+  fixed: boolean
+}
+
+const parseLayerName = (rawName: string | undefined) => {
+  let name = rawName ?? ""
+  let fixed = false
+  let option = false
+  if (name.startsWith("!")) {
+    fixed = true
+    name = name.slice(1)
+  } else if (name.startsWith("*")) {
+    option = true
+    name = name.slice(1)
+  }
+  return { name, fixed, option }
+}
+
+const flattenLeaves = (root: PsdLayer, options: Record<string, unknown>) => {
+  const result: LayerInfo[] = []
+  const visit = (layer: PsdLayer, parentPath: string, parentVisible: boolean) => {
+    const info = parseLayerName(layer.name)
+    const path = parentPath ? `${parentPath}/${info.name}` : info.name
+    if (!parentVisible || layer.visible === false) return
     if (layer.children?.length) {
-      layer.children.forEach(visit)
+      for (const child of layer.children) {
+        const childInfo = parseLayerName(child.name)
+        const selected = options[path]
+        const childVisible =
+          !childInfo.option || selected === undefined || selected === childInfo.name
+        visit(child, path, childVisible)
+      }
     } else if (layerCanvas(layer)) {
-      result.push(layer)
+      result.push({ layer, path, name: info.name, fixed: info.fixed })
     }
   }
-  visit(root)
+  visit(root, "", true)
   return result
 }
 
-const isLayerVisible = (layer: PsdLayer, options: Record<string, unknown>) => {
-  const value = options[layer.name ?? ""]
+const isLayerVisible = (info: LayerInfo, options: Record<string, unknown>) => {
+  if (info.fixed) return info.layer.visible !== false
+  const value = options[info.path] ?? options[info.name]
   if (typeof value === "boolean") return value
   if (value && typeof value === "object" && "visible" in value) {
     return Boolean((value as { visible?: unknown }).visible)
   }
-  return true
+  return info.layer.visible !== false
+}
+
+const getPsdDefaults = (psd: Psd): Record<string, boolean> => {
+  const schema = getSchema(psd) as {
+    properties?: Record<string, { default?: boolean }>
+  }
+
+  const entries = Object.entries(schema.properties ?? {})
+    .filter(([, value]) => value.default !== undefined)
+    // 親を先に処理するため、階層の浅い順
+    .sort(([a], [b]) => a.split("/").length - b.split("/").length)
+
+  const result: Record<string, boolean> = {}
+
+  for (const [key, value] of entries) {
+    let enabled = value.default!
+
+    const parts = key.split("/")
+
+    // 親を順番に確認
+    for (let i = 1; i < parts.length; i++) {
+      const parent = parts.slice(0, i).join("/")
+      if (result[parent] === false) {
+        enabled = false
+        break
+      }
+    }
+
+    result[key] = enabled
+  }
+
+  return result
 }
 
 const drawBuffer = (
@@ -102,11 +167,11 @@ const drawBuffer = (
   const context = target.getContext("2d")
   if (!context) return
   context.clearRect(0, 0, target.width, target.height)
-  for (const layer of flattenLeaves(root)) {
-    if (!isLayerVisible(layer, options)) continue
-    const source = layerCanvas(layer)
+  for (const info of flattenLeaves(root, options)) {
+    if (!isLayerVisible(info, options)) continue
+    const source = layerCanvas(info.layer)
     if (!source) continue
-    context.drawImage(source, layer.left ?? 0, layer.top ?? 0)
+    context.drawImage(source, info.layer.left ?? 0, info.layer.top ?? 0)
   }
 }
 
@@ -148,7 +213,8 @@ export const PsdMotionCharacter = ({
   style,
 }: PsdMotionCharacterProps) => {
   const active = useClipActive()
-  const frame = useGlobalCurrentFrame()
+  const currentFrame = useCurrentFrame()
+  const globalFrame = useGlobalCurrentFrame()
   const segments = usePsdMotionSegments()
   const [psd, setPsd] = useState<Psd | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -156,10 +222,23 @@ export const PsdMotionCharacter = ({
 
   const results = useMemo(
     () =>
-      resolvePsdMotionSegments(segments, id, frame),
-    [frame, id, segments],
+      resolvePsdMotionSegments(segments, id, currentFrame, globalFrame),
+    [currentFrame, globalFrame, id, segments],
   )
-  const options = useMemo(() => mergePsdMotionOptions(results), [results])
+
+  const defaults = useMemo(
+    () => psd ? getPsdDefaults(psd) : {},
+    [psd],
+  )
+
+  const options = useMemo(
+    () => ({
+        ...defaults,
+        ...mergePsdMotionOptions(results),
+    }),
+    [defaults, results],
+  )
+
   const transform = useMemo(
     () => mergePsdCanvasTransforms(results.map((result) => result.transform)),
     [results],
@@ -167,7 +246,7 @@ export const PsdMotionCharacter = ({
 
   useEffect(() => {
     let alive = true
-    setPsd(null)
+    // setPsd(null)
     loadPsd(psdPath)
       .then((value) => {
         if (alive) setPsd(value)
@@ -190,7 +269,7 @@ export const PsdMotionCharacter = ({
 
   useEffect(() => {
     draw()
-  }, [draw, frame])
+  }, [draw, globalFrame])
 
   return <canvas ref={canvasRef} className={className} style={style} />
 }
