@@ -29,6 +29,7 @@ export type PsdMotionCharacterProps = {
 
 const cache = new Map<string, Psd>()
 const pending = new Map<string, Promise<Psd>>()
+const imageDataCanvasCache = new WeakMap<ImageData, HTMLCanvasElement>()
 
 const getPsdUrl = (path: string) => {
   const url = new URL("http://localhost:3000/file")
@@ -58,10 +59,13 @@ const loadPsd = async (path: string) => {
 }
 
 const imageDataCanvas = (imageData: ImageData) => {
+  const cached = imageDataCanvasCache.get(imageData)
+  if (cached) return cached
   const canvas = document.createElement("canvas")
   canvas.width = imageData.width
   canvas.height = imageData.height
   canvas.getContext("2d")?.putImageData(imageData, 0, 0)
+  imageDataCanvasCache.set(imageData, canvas)
   return canvas
 }
 
@@ -76,6 +80,7 @@ type LayerInfo = {
   path: string
   name: string
   fixed: boolean
+  optionParents: Array<{ path: string; name: string }>
 }
 
 const parseLayerName = (rawName: string | undefined) => {
@@ -92,29 +97,36 @@ const parseLayerName = (rawName: string | undefined) => {
   return { name, fixed, option }
 }
 
-const flattenLeaves = (root: PsdLayer, options: Record<string, unknown>) => {
+const flattenLeaves = (root: PsdLayer) => {
   const result: LayerInfo[] = []
-  const visit = (layer: PsdLayer, parentPath: string, parentVisible: boolean) => {
+  const visit = (
+    layer: PsdLayer,
+    parentPath: string,
+    optionParents: Array<{ path: string; name: string }>,
+  ) => {
     const info = parseLayerName(layer.name)
     const path = parentPath ? `${parentPath}/${info.name}` : info.name
-    if (!parentVisible || layer.visible === false) return
+    if (layer.visible === false) return
     if (layer.children?.length) {
       for (const child of layer.children) {
         const childInfo = parseLayerName(child.name)
-        const selected = options[path]
-        const childVisible =
-          !childInfo.option || selected === undefined || selected === childInfo.name
-        visit(child, path, childVisible)
+        const childOptions = childInfo.option
+          ? [...optionParents, { path, name: childInfo.name }]
+          : optionParents
+        visit(child, path, childOptions)
       }
     } else if (layerCanvas(layer)) {
-      result.push({ layer, path, name: info.name, fixed: info.fixed })
+      result.push({ layer, path, name: info.name, fixed: info.fixed, optionParents })
     }
   }
-  visit(root, "", true)
+  visit(root, "", [])
   return result
 }
 
 const isLayerVisible = (info: LayerInfo, options: Record<string, unknown>) => {
+  if (info.optionParents.some(({ path, name }) => options[path] !== undefined && options[path] !== name)) {
+    return false
+  }
   if (info.fixed) return info.layer.visible !== false
   const value = options[info.path] ?? options[info.name]
   if (typeof value === "boolean") return value
@@ -160,6 +172,7 @@ const drawBuffer = (
   psd: Psd,
   options: Record<string, unknown>,
   target: HTMLCanvasElement,
+  layers: LayerInfo[],
 ) => {
   const root = psd as unknown as PsdLayer
   target.width = psd.width
@@ -167,7 +180,7 @@ const drawBuffer = (
   const context = target.getContext("2d")
   if (!context) return
   context.clearRect(0, 0, target.width, target.height)
-  for (const info of flattenLeaves(root, options)) {
+  for (const info of layers) {
     if (!isLayerVisible(info, options)) continue
     const source = layerCanvas(info.layer)
     if (!source) continue
@@ -219,6 +232,7 @@ export const PsdMotionCharacter = ({
   const [psd, setPsd] = useState<Psd | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const bufferRef = useRef<HTMLCanvasElement | null>(null)
+  const renderedOptionsRef = useRef<Record<string, unknown> | null>(null)
 
   const results = useMemo(
     () =>
@@ -239,12 +253,18 @@ export const PsdMotionCharacter = ({
     [defaults, results],
   )
 
+  const layers = useMemo(
+    () => (psd ? flattenLeaves(psd as unknown as PsdLayer) : []),
+    [psd],
+  )
+
   const transform = useMemo(
     () => mergePsdCanvasTransforms(results.map((result) => result.transform)),
     [results],
   )
 
   useEffect(() => {
+    renderedOptionsRef.current = null
     let alive = true
     // setPsd(null)
     loadPsd(psdPath)
@@ -263,10 +283,18 @@ export const PsdMotionCharacter = ({
     if (!currentPsd || !target || !active) return
     const buffer = bufferRef.current ?? document.createElement("canvas")
     bufferRef.current = buffer
-    console.log(options)
-    drawBuffer(currentPsd, options, buffer)
+    const previousOptions = renderedOptionsRef.current
+    const optionKeys = Object.keys(options)
+    const optionsChanged =
+      !previousOptions ||
+      optionKeys.length !== Object.keys(previousOptions).length ||
+      optionKeys.some((key) => options[key] !== previousOptions[key])
+    if (optionsChanged) {
+      drawBuffer(currentPsd, options, buffer, layers)
+      renderedOptionsRef.current = options
+    }
     drawTransformed(buffer, target, transform)
-  }, [active, options, psd, transform])
+  }, [active, layers, options, psd, transform])
 
   useEffect(() => {
     draw()
