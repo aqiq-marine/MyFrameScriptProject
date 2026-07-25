@@ -26,6 +26,23 @@ const convLipsync = (data: {start: number, value: string}[]) => {
   return data.map(d => ({start: d.start * PROJECT_SETTINGS.fps, state: d.value as MouseState7}))
 }
 
+const Voice = ({file}: {file: AssetFile}) => (
+  <Clip>
+    <LipsyncMotion characterId="aoi" psdOptions={{
+      Path: aoiDict.mouthOptions.path,
+      A: aoiDict.mouthOptions.options.A,
+      I: aoiDict.mouthOptions.options.I,
+      U: aoiDict.mouthOptions.options.U,
+      E: aoiDict.mouthOptions.options.E,
+      O: aoiDict.mouthOptions.options.O,
+      N: aoiDict.mouthOptions.options.X,
+      X: aoiDict.mouthOptions.options.X,
+    }} sequence={convLipsync(file.lipsync_data)}/>
+    <Sound sound={"assets/voice_test/" + file.audio_path} />
+    <Jimaku text={file.script_text} starts={file.starts} />
+  </Clip>
+)
+
 
 const HelloScene = () => {
   const progress = useVariable(0)
@@ -54,6 +71,52 @@ const HelloScene = () => {
   )
 }
 
+const IntroScene = () => {
+  const files = assets.children.introduction.files;
+
+  return (
+    <ClipSequence>
+      <Voice file={files[0]} />
+      <Voice file={files[1]} />
+      <Voice file={files[2]} />
+      <Voice file={files[3]} />
+      <Voice file={files[4]} />
+      <Voice file={files[5]} />
+    </ClipSequence>
+  )
+}
+
+const BodyScene = () => {
+  const files = assets.children.body.files;
+
+  return (
+    <ClipSequence>
+      <Voice file={files[0]} />
+      <Voice file={files[1]} />
+      <Voice file={files[2]} />
+      <Voice file={files[3]} />
+      <Voice file={files[4]} />
+      <Voice file={files[5]} />
+      <Voice file={files[6]} />
+    </ClipSequence>
+  )
+}
+
+const ConScene = () => {
+  const files = assets.children.conclusion.files;
+
+  return (
+    <ClipSequence>
+      <Voice file={files[0]} />
+      <Voice file={files[1]} />
+      <Voice file={files[2]} />
+      <Voice file={files[3]} />
+      <Voice file={files[4]} />
+      <Voice file={files[5]} />
+    </ClipSequence>
+  )
+}
+
 
 export const MYPROJECT = () => {
   return (
@@ -63,20 +126,20 @@ export const MYPROJECT = () => {
           <PsdMotionCharacter
             id="aoi"
             psd="assets/utils/nokuna/kotonoha_aoi_v1.psd"
+            className="aoi"
+            style={{
+              position: "absolute",
+              width: "60%",
+              left: "-15%",
+              top: "25%"
+            }}
           />
-          <Clip>
-            <LipsyncMotion characterId="aoi" psdOptions={{
-              Path: aoiDict.mouthOptions.path,
-              A: aoiDict.mouthOptions.options.A,
-              I: aoiDict.mouthOptions.options.I,
-              U: aoiDict.mouthOptions.options.U,
-              E: aoiDict.mouthOptions.options.E,
-              O: aoiDict.mouthOptions.options.O,
-              N: aoiDict.mouthOptions.options.X,
-              X: aoiDict.mouthOptions.options.X,
-            }} sequence={convLipsync(assets.children.introduction.files[0].lipsync_data)}/>
-            <Sound sound={"assets/voice_test/" + assets.children.introduction.files[0].audio_path} />
-          </Clip>
+          <ClipSequence>
+            <IntroScene />
+            <BodyScene />
+            <ConScene />
+          </ClipSequence>
+          <Bgm sound="assets/utils/bgm/Let_me_think_!.mp3" volume={0.1} fadeInFrames={seconds(3)} fadeOutFrames={seconds(1)} />
         </Clip>
       </TimeLine>
     </Project>
