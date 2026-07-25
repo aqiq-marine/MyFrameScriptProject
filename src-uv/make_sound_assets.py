@@ -47,13 +47,13 @@ def parse_lab(path: Path):
 
 VOWEL_MAP = {
     "a": "A",
-    "i": "B",
-    "u": "C",
-    "e": "D",
-    "o": "E",
+    "i": "I",
+    "u": "U",
+    "e": "E",
+    "o": "O",
 }
 
-def lab_to_rhubarb(data):
+def lab_to_myformat(data):
     cues = []
 
     for i, p in enumerate(data):
@@ -67,11 +67,16 @@ def lab_to_rhubarb(data):
 
         cues.append({
             "start": p["start"] / 10_000_000,
-            "end": p["end"] / 10_000_000,
             "value": value or "X",
         })
 
-    return {"mouthCues": cues}
+    if not (len(cues) > 0 and cues[0]["start"] == 0):
+      cues.insert(0, {
+          "start": 0.0,
+          "value": "X"
+      })
+
+    return cues
 
 # ==========================
 # スクリプト解析
@@ -207,7 +212,7 @@ for wav in ROOT.rglob("*.wav"):
     entry = {
         "audio_path": str(wav.relative_to(ROOT)).replace("\\", "/"),
         "lipsync_path": str(lab.relative_to(ROOT)).replace("\\", "/"),
-        "lipsync_data": lab_to_rhubarb(lipsync),
+        "lipsync_data": lab_to_myformat(lipsync),
         "script_path": str(txt.relative_to(ROOT)).replace("\\", "/"),
         "script_text": script_text,
         "starts": list(map(lambda s: s / 10_000_000, starts))

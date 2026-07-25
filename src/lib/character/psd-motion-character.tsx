@@ -263,6 +263,7 @@ export const PsdMotionCharacter = ({
     if (!currentPsd || !target || !active) return
     const buffer = bufferRef.current ?? document.createElement("canvas")
     bufferRef.current = buffer
+    console.log(options)
     drawBuffer(currentPsd, options, buffer)
     drawTransformed(buffer, target, transform)
   }, [active, options, psd, transform])
