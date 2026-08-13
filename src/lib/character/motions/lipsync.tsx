@@ -64,10 +64,8 @@ export const LipsyncMotion = ({
   return (
     <PsdMotion
       characterId={characterId}
-      variables={{ t: useVariable(0) }}
-      animation={async (ctx, v) => {
-        await ctx.move(v.t).to(1, range.end - range.start)
-      }}
+      variables={{}}
+      animation={async (_c, _v) => {}}
       motion={({ globalFrame }) => {
         const state = resolveLipsyncState(
           schedule,

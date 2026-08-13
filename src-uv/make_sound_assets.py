@@ -6,7 +6,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-ROOT = Path("../assets/voice_test/")
+ROOT = Path("../assets/experiment_and_language/")
 OUTPUT = ROOT / "assets.ts"
 
 
@@ -227,8 +227,25 @@ for wav in ROOT.rglob("*.wav"):
 
 
 # ソート
+# def sort_bundle(node):
+#     node["files"].sort(key=lambda x: x["audio_path"])
+# 
+#     node["children"] = dict(sorted(node["children"].items()))
+# 
+#     for child in node["children"].values():
+#         sort_bundle(child)
+
 def sort_bundle(node):
-    node["files"].sort(key=lambda x: x["audio_path"])
+    def sort_key(x):
+        filename = Path(x["audio_path"]).name
+        number = filename.split("_", 1)[0]
+
+        try:
+            return int(number)
+        except ValueError:
+            return float("inf")
+
+    node["files"].sort(key=sort_key)
 
     node["children"] = dict(sorted(node["children"].items()))
 

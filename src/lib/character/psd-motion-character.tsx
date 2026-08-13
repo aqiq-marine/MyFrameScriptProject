@@ -2,7 +2,7 @@ import { readPsd, type Psd } from "ag-psd"
 import { getSchema } from "ag-psd-psdtool"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useClipActive } from "../clip"
-import { useCurrentFrame, useGlobalCurrentFrame } from "../frame"
+import { useGlobalCurrentFrame } from "../frame"
 import {
   mergePsdCanvasTransforms,
   mergePsdMotionOptions,
@@ -226,7 +226,6 @@ export const PsdMotionCharacter = ({
   style,
 }: PsdMotionCharacterProps) => {
   const active = useClipActive()
-  const currentFrame = useCurrentFrame()
   const globalFrame = useGlobalCurrentFrame()
   const segments = usePsdMotionSegments()
   const [psd, setPsd] = useState<Psd | null>(null)
@@ -236,8 +235,8 @@ export const PsdMotionCharacter = ({
 
   const results = useMemo(
     () =>
-      resolvePsdMotionSegments(segments, id, currentFrame, globalFrame),
-    [currentFrame, globalFrame, id, segments],
+      resolvePsdMotionSegments(segments, id, globalFrame),
+    [globalFrame, id, segments],
   )
 
   const defaults = useMemo(

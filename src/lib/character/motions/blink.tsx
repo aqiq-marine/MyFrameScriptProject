@@ -14,10 +14,8 @@ type BlinkEvent = {
   state: EyeState2 | EyeState4
 }
 
-// const OPEN_MIN = 90
-// const OPEN_MAX = 240
-const OPEN_MIN = 1
-const OPEN_MAX = 2
+const OPEN_MIN = 90
+const OPEN_MAX = 240
 
 const randomInt = (min: number, max: number) =>
   Math.floor(Math.random() * (max - min + 1)) + min
@@ -31,13 +29,15 @@ const generateBlinkSchedule = (
 
   while (frame < endFrame) {
     events.push(
-      { frame, state: "HalfClosed" },
-      { frame: frame + 1, state: "Closed" },
-      { frame: frame + 2, state: "HalfOpen" },
-      { frame: frame + 3, state: "Open" },
+      { frame, state: "HalfOpen" },
+      { frame: frame + 1, state: "HalfClosed" },
+      { frame: frame + 2, state: "Closed" },
+      { frame: frame + 3, state: "HalfClosed" },
+      { frame: frame + 4, state: "HalfOpen" },
+      { frame: frame + 5, state: "Open" },
     )
 
-    frame += 4 + randomInt(OPEN_MIN, OPEN_MAX)
+    frame += 6 + randomInt(OPEN_MIN, OPEN_MAX)
   }
 
   return events

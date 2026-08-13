@@ -111,7 +111,6 @@ const resolveVariables = (
 export const resolvePsdMotionSegments = (
   list: readonly PsdMotionSegment[],
   characterId: string,
-  currentFrame: number,
   globalFrame: number,
 ) => {
   return list
@@ -135,7 +134,7 @@ export const resolvePsdMotionSegments = (
         durationFrames,
         variables: resolveVariables(
           segment.motion.variables,
-          currentFrame
+          globalFrame - segment.projectStartFrame
         ),
       })
     })
