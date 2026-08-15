@@ -77,61 +77,190 @@ export const StaticJimaku = ({text}: { text: string }) => {
     </div>
   )
 }
+type Break = {
+  char: number;
+  time: number;
+  priority: number;
+};
 
-export const Jimaku = ({ text, starts }: { text: string, starts: number[] }) => {
+const BASIC_CHARS_THRESHOLD = 25;
+const ALLOW_CHARS = 30;
+
+type JimakuSegment = {
+  time: number;
+  startChar: number;
+  endChar: number;
+};
+
+type DPState = {
+  cost: number;
+  prev: number;
+};
+
+const createSegments = (
+  text: string,
+  breaks: Break[],
+): JimakuSegment[] => {
+  if (breaks.length === 0) {
+    return [];
+  }
+
+  const n = breaks.length;
+
+  const dp: DPState[] = Array.from(
+    { length: n },
+    () => ({
+      cost: Infinity,
+      prev: -1,
+    }),
+  );
+
+  dp[0] = {
+    cost: 0,
+    prev: -1,
+  };
+
+  for (let i = 0; i < n; i++) {
+    if (dp[i].cost === Infinity) {
+      continue;
+    }
+
+    let foundWithinLimit = false;
+
+    for (let j = i + 1; j < n; j++) {
+      const length =
+        breaks[j].char - breaks[i].char;
+
+      // 30字以内なら通常通り候補にする
+      if (length <= ALLOW_CHARS) {
+        foundWithinLimit = true;
+
+        const cost =
+          (length - BASIC_CHARS_THRESHOLD) ** 2;
+
+        const newCost = dp[i].cost + cost;
+
+        if (newCost < dp[j].cost) {
+          dp[j] = {
+            cost: newCost,
+            prev: i,
+          };
+        }
+
+        continue;
+      }
+
+      // 30字以内のbreakが1つもなかった場合は、
+      // 最初に30字を超えたbreakを強制的に採用する
+      if (!foundWithinLimit) {
+        const cost =
+          (length - BASIC_CHARS_THRESHOLD) ** 2;
+
+        const newCost = dp[i].cost + cost;
+
+        if (newCost < dp[j].cost) {
+          dp[j] = {
+            cost: newCost,
+            prev: i,
+          };
+        }
+      }
+
+      // これ以降はさらに長くなるので終了
+      break;
+    }
+  }
+
+  // 最後のbreakからtext末尾まで
+  let bestCost = Infinity;
+  let bestIndex = -1;
+
+  for (let i = 0; i < n; i++) {
+    if (dp[i].cost === Infinity) {
+      continue;
+    }
+
+    const length = text.length - breaks[i].char;
+
+    const cost =
+      (length - BASIC_CHARS_THRESHOLD) ** 2;
+
+    const totalCost = dp[i].cost + cost;
+
+    if (totalCost < bestCost) {
+      bestCost = totalCost;
+      bestIndex = i;
+    }
+  }
+
+  if (bestIndex === -1) {
+    return [];
+  }
+
+  // 最適な分割を復元
+  const indices: number[] = [];
+
+  let current = bestIndex;
+
+  while (current !== -1) {
+    indices.push(current);
+    current = dp[current].prev;
+  }
+
+  indices.reverse();
+
+  const segments: JimakuSegment[] = [];
+
+  for (let i = 0; i < indices.length; i++) {
+    const startIndex = indices[i];
+    const endIndex = indices[i + 1];
+
+    segments.push({
+      time: breaks[startIndex].time,
+      startChar: breaks[startIndex].char,
+      endChar:
+        endIndex !== undefined
+          ? breaks[endIndex].char
+          : text.length,
+    });
+  }
+
+  return segments;
+};
+
+
+export const Jimaku = ({
+  text,
+  breaks,
+}: {
+  text: string;
+  breaks: Break[];
+}) => {
   const f = useCurrentFrame();
   const t = framesToSeconds(f);
 
-  if (f == 0) {
-    return null
+  if (f === 0) {
+    return null;
   }
 
-  const threshold = 28;
+  const segments = createSegments(text, breaks);
 
-  const split_text: string[] = [];
-  const split_starts: number[] = [];
+  let currentSegmentIndex = 0;
 
-  // 1. 読点で分割
-  const chunks = text.split('、');
-
-  let cur_chunk = '';
-  let cur_start_index = 0;
-
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    // threshold以下なら連結
-    if ((cur_chunk + chunk).length <= threshold) {
-      if (cur_chunk === '') {
-        cur_start_index = i; // このまとまりの最初のチャンクのindex
-        cur_chunk = chunk;
-      } else {
-        cur_chunk += '、' + chunk;
-      }
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i].time <= t) {
+      currentSegmentIndex = i;
     } else {
-      // まとまりを保存
-      split_text.push(cur_chunk);
-      split_starts.push(starts[cur_start_index]);
-      // 新しいまとまりに切り替え
-      cur_chunk = chunk;
-      cur_start_index = i;
+      break;
     }
   }
 
-  // 残りのチャンクがあれば追加
-  if (cur_chunk !== '') {
-    split_text.push(cur_chunk);
-    split_starts.push(starts[cur_start_index]);
-  }
+  const currentSegment = segments[currentSegmentIndex];
 
-  // 現在のフレームから表示するテキストを取得
+  const currentText = text.slice(
+    currentSegment.startChar,
+    currentSegment.endChar,
+  );
 
-  let cur_text_index = 0;
-  for (let i = 0; i < split_starts.length; i++) {
-    if (split_starts[i] <= t) {
-      cur_text_index = i;
-    }
-  }
-
-  const current_text = split_text[cur_text_index];
-  return <StaticJimaku text={current_text} />;
+  return <StaticJimaku text={currentText} />;
 };
