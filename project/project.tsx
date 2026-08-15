@@ -1,4 +1,4 @@
-import { MYPROJECT } from "./no_longer_human/project"
+import { MYPROJECT } from "./experiment_and_language/project"
 
 export const PROJECT_SETTINGS: ProjectSettings = {
   name: "framescript-template",

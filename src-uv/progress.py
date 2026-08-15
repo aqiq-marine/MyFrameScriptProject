@@ -1,16 +1,47 @@
 from __future__ import annotations
 
-from typing import Iterable, Sequence
+from pathlib import Path
+from typing import Sequence
+
+import pyopenjtalk
 
 
 # ============================================================
-# OpenJTalk
+# User dictionary
 # ============================================================
 
-try:
-    import pyopenjtalk
-except ImportError:
-    pyopenjtalk = None
+def _load_user_dictionary() -> None:
+    """
+    ユーザー辞書が存在する場合は OpenJTalk に読み込む。
+
+    探索順:
+        1. このファイルと同じディレクトリ / user.dic
+        2. このファイルと同じディレクトリ / userdict/user.dic
+
+    .dic が存在しない場合は何もしない。
+    """
+
+    base_dir = Path(__file__).resolve().parent
+
+    candidates = (
+        base_dir / "user.dic",
+        base_dir / "userdict" / "user.dic",
+    )
+
+    for user_dict_path in candidates:
+
+        if not user_dict_path.is_file():
+            continue
+
+        pyopenjtalk.update_global_jtalk_with_user_dict(
+            str(user_dict_path)
+        )
+
+        return
+
+
+# モジュール読み込み時にユーザー辞書を適用
+_load_user_dictionary()
 
 
 # ============================================================
@@ -57,7 +88,7 @@ def _count_kana_mora(kana: str) -> int:
         → 5
 
         キョウ
-        → 3
+        → 2
            キョ / ウ
 
         ガッコウ
@@ -70,7 +101,6 @@ def _count_kana_mora(kana: str) -> int:
     if not kana:
         return 0
 
-    # モーラを構成しない小書き文字。
     small_kana = {
         "ァ", "ィ", "ゥ", "ェ", "ォ",
         "ャ", "ュ", "ョ",
@@ -82,11 +112,10 @@ def _count_kana_mora(kana: str) -> int:
 
     for ch in kana:
 
-        # 空白などは無視
         if ch.isspace():
             continue
 
-        # 小書き文字は前の文字と結合
+        # 小書き文字は前の文字に含める
         if ch in small_kana:
             continue
 
@@ -118,7 +147,8 @@ def text_to_mora_count(
     日本語テキストをOpenJTalkで読みへ変換し、
     モーラ数を返す。
 
-    pyopenjtalkが必要。
+    ユーザー辞書が存在する場合は、
+    モジュール読み込み時に適用された辞書を使用する。
     """
 
     if not text:
@@ -219,20 +249,6 @@ def count_moras_from_phonemes(
 
         q / cl
             → 1モーラ
-
-    例:
-
-        ky o u
-        → 2モーラ
-           キョ / ウ
-
-        g a k k o u
-        → 音素表現によるが、
-          母音を中心にモーラを数える。
-
-    注意:
-        LABのsymbol体系がOpenJTalk標準と異なる場合は
-        この関数の調整が必要。
     """
 
     count = 0

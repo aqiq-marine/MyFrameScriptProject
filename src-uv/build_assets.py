@@ -1,32 +1,40 @@
 import json
 from pathlib import Path
+from typing import Any
 
-
-ROOT = Path("../assets/no_longer_human/")
-OUTPUT = ROOT / "assets.ts"
 
 TIME_SCALE = 10_000_000
 
+VOWEL_MAP = {
+    "a": "A",
+    "i": "I",
+    "u": "U",
+    "e": "E",
+    "o": "O",
+}
+
+
+Bundle = dict[str, Any]
+
 
 # ==========================
-# Bundle構造
+# Bundle
 # ==========================
 
-def make_bundle():
+def make_bundle() -> Bundle:
+    """空のBundleを作成する。"""
     return {
         "files": [],
-        "children": {}
+        "children": {},
     }
 
 
-bundle = make_bundle()
-
-
 # ==========================
-# lab読み込み
+# lab
 # ==========================
 
-def parse_lab(path: Path):
+def parse_lab(path: Path) -> list[dict[str, Any]]:
+    """LABファイルを読み込む。"""
     lipsync = []
 
     with path.open("r", encoding="utf-8") as f:
@@ -39,57 +47,48 @@ def parse_lab(path: Path):
             lipsync.append({
                 "start": int(cols[0]),
                 "end": int(cols[1]),
-                "symbol": cols[2]
+                "symbol": cols[2],
             })
 
     return lipsync
 
 
-# ==========================
-# lipsync変換
-# ==========================
-
-VOWEL_MAP = {
-    "a": "A",
-    "i": "I",
-    "u": "U",
-    "e": "E",
-    "o": "O",
-}
-
-
-def lab_to_myformat(data):
+def lab_to_myformat(
+    data: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """LABデータをlipsync用の形式へ変換する。"""
     cues = []
 
-    for i, p in enumerate(data):
-        value = VOWEL_MAP.get(p["symbol"])
+    for i, point in enumerate(data):
+        value = VOWEL_MAP.get(point["symbol"])
 
         if value is None:
-            for nxt in data[i + 1:]:
-                value = VOWEL_MAP.get(nxt["symbol"])
+            for next_point in data[i + 1:]:
+                value = VOWEL_MAP.get(next_point["symbol"])
 
                 if value:
                     break
 
         cues.append({
-            "start": p["start"] / TIME_SCALE,
+            "start": point["start"] / TIME_SCALE,
             "value": value or "X",
         })
 
-    if not (len(cues) > 0 and cues[0]["start"] == 0):
+    if not cues or cues[0]["start"] != 0:
         cues.insert(0, {
             "start": 0.0,
-            "value": "X"
+            "value": "X",
         })
 
     return cues
 
 
 # ==========================
-# brk読み込み
+# brk
 # ==========================
 
-def parse_brk(path: Path):
+def parse_brk(path: Path) -> list[dict[str, Any]]:
+    """BRKファイルを読み込む。"""
     breaks = []
 
     with path.open("r", encoding="utf-8") as f:
@@ -129,68 +128,97 @@ def parse_brk(path: Path):
 
 
 # ==========================
-# メイン
+# Asset
 # ==========================
 
-for wav in ROOT.rglob("*.wav"):
-
+def make_asset_entry(
+    wav: Path,
+    root: Path,
+) -> dict[str, Any]:
+    """1つのWAVからAssetDataを作成する。"""
     stem = wav.with_suffix("")
 
     txt = stem.with_suffix(".txt")
     lab = stem.with_suffix(".lab")
     brk = stem.with_suffix(".brk")
 
-    if not txt.exists() or not lab.exists() or not brk.exists():
-        print(f"Skip: {wav}")
-        continue
-
     script_text = txt.read_text(
-        encoding="utf-8"
+        encoding="utf-8",
     ).strip()
 
     lipsync = parse_lab(lab)
-
     breaks = parse_brk(brk)
 
-    entry = {
-        "audio_path": str(
-            wav.relative_to(ROOT)
-        ).replace("\\", "/"),
-
-        "lipsync_path": str(
-            lab.relative_to(ROOT)
-        ).replace("\\", "/"),
-
+    return {
+        "audio_path": to_relative_path(wav, root),
+        "lipsync_path": to_relative_path(lab, root),
         "lipsync_data": lab_to_myformat(lipsync),
-
-        "script_path": str(
-            txt.relative_to(ROOT)
-        ).replace("\\", "/"),
-
+        "script_path": to_relative_path(txt, root),
         "script_text": script_text,
-
         "breaks": breaks,
     }
 
-    node = bundle
 
-    for part in wav.parent.relative_to(ROOT).parts:
-        node = node["children"].setdefault(
-            part,
-            make_bundle()
+def to_relative_path(
+    path: Path,
+    root: Path,
+) -> str:
+    """rootからの相対パスをTS/JSON向けの形式にする。"""
+    return str(path.relative_to(root)).replace("\\", "/")
+
+
+# ==========================
+# Bundle構築
+# ==========================
+
+def build_bundle(root: Path) -> Bundle:
+    """指定されたディレクトリからBundleを構築する。"""
+    root = root.resolve()
+
+    bundle = make_bundle()
+
+    for wav in root.rglob("*.wav"):
+        stem = wav.with_suffix("")
+
+        txt = stem.with_suffix(".txt")
+        lab = stem.with_suffix(".lab")
+        brk = stem.with_suffix(".brk")
+
+        if not txt.exists() or not lab.exists() or not brk.exists():
+            print(f"Skip: {wav}")
+            continue
+
+        entry = make_asset_entry(
+            wav=wav,
+            root=root,
         )
 
-    node["files"].append(entry)
+        node = bundle
+
+        relative_parent = wav.parent.relative_to(root)
+
+        for part in relative_parent.parts:
+            node = node["children"].setdefault(
+                part,
+                make_bundle(),
+            )
+
+        node["files"].append(entry)
+
+    sort_bundle(bundle)
+
+    return bundle
 
 
 # ==========================
 # ソート
 # ==========================
 
-def sort_bundle(node):
+def sort_bundle(node: Bundle) -> None:
+    """Bundle内のファイル・ディレクトリをソートする。"""
 
-    def sort_key(x):
-        filename = Path(x["audio_path"]).name
+    def sort_key(entry: dict[str, Any]) -> int | float:
+        filename = Path(entry["audio_path"]).name
         number = filename.split("_", 1)[0]
 
         try:
@@ -208,33 +236,95 @@ def sort_bundle(node):
         sort_bundle(child)
 
 
-sort_bundle(bundle)
-
-
 # ==========================
 # TypeScript出力
 # ==========================
 
-with OUTPUT.open(
-    "w",
-    encoding="utf-8",
-    newline="\n"
-) as f:
-
-    f.write("export const assets = ")
-
-    json.dump(
-        bundle,
-        f,
-        ensure_ascii=False,
-        indent=2,
+def write_typescript(
+    bundle: Bundle,
+    output: Path,
+) -> None:
+    """BundleをTypeScriptファイルとして出力する。"""
+    output.parent.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
-    f.write(";\n\n")
-    f.write("export type AssetData = typeof assets;\n\n")
-    f.write("export default assets;\n")
+    with output.open(
+        "w",
+        encoding="utf-8",
+        newline="\n",
+    ) as f:
+        f.write("export const assets = ")
+
+        json.dump(
+            bundle,
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+        f.write(";\n\n")
+        f.write("export type AssetData = typeof assets;\n\n")
+        f.write("export default assets;\n")
 
 
-print()
-print("Done.")
-print(f"Saved : {OUTPUT}")
+# ==========================
+# Public API
+# ==========================
+
+def generate_assets(
+    root: Path | str,
+    output: Path | str | None = None,
+) -> Bundle:
+    """
+    assetsディレクトリを解析してassets.tsを生成する。
+
+    Args:
+        root:
+            WAV/TXT/LAB/BRKが格納されているルートディレクトリ。
+
+        output:
+            出力するTypeScriptファイル。
+            Noneの場合はroot / "assets.ts"。
+
+    Returns:
+        構築されたBundle。
+    """
+    root = Path(root)
+
+    if output is None:
+        output = root / "assets.ts"
+    else:
+        output = Path(output)
+
+    bundle = build_bundle(root)
+
+    write_typescript(
+        bundle=bundle,
+        output=output,
+    )
+
+    return bundle
+
+
+# ==========================
+# CLI
+# ==========================
+
+def main() -> None:
+    root = Path("../assets/no_longer_human/")
+    output = root / "assets.ts"
+
+    generate_assets(
+        root=root,
+        output=output,
+    )
+
+    print()
+    print("Done.")
+    print(f"Saved : {output}")
+
+
+if __name__ == "__main__":
+    main()
